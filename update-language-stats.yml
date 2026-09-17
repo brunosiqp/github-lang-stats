@@ -1,0 +1,35 @@
+name: Update language stats
+
+on:
+  schedule:
+    - cron: "0 6 * * *"   # todos os dias às 06:00 UTC
+  workflow_dispatch: {}   # permite rodar manualmente pelo GitHub
+
+jobs:
+  update-stats:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run language stats script
+        env:
+          GH_TOKEN: ${{ secrets.GH_PAT }}
+          # GH_USER: seu-usuario   # opcional, descomente se necessário
+        run: python language_stats.py
+
+      - name: Commit and push if changed
+        run: |
+          git config --local user.email "actions@github.com"
+          git config --local user.name "github-actions"
+          git add language-stats.svg
+          git diff --quiet --cached || git commit -m "chore: atualiza estatísticas de linguagens"
+          git push
