@@ -1,12 +1,24 @@
-# Language Stats
+# github-lang-stats
 
 Gera um SVG com a porcentagem de uso de cada linguagem somando **todos**
 os seus repositórios do GitHub — públicos e privados — parecido com o
 card "Most Used Languages".
 
+![Minhas linguagens](./language-stats.svg)
+
+> A imagem acima é o próprio `language-stats.svg` gerado pelo workflow.
+> Como ele fica salvo neste repositório e o README o referencia com
+> caminho relativo (`./language-stats.svg`), o gráfico aparece
+> automaticamente pra qualquer pessoa que abrir esta página no GitHub —
+> não precisa colocar em outro repositório nem em outro README.
+> Na primeira execução do workflow o arquivo ainda não existe, então a
+> imagem só aparece depois do primeiro run (manual ou automático).
+
 ## Como configurar
 
-1. **Crie o repositório** no GitHub (pode ser privado) e suba estes arquivos.
+1. **Crie o repositório** no GitHub chamado, por exemplo, `github-lang-stats`
+   (pode ser privado ou público — funciona nos dois casos) e suba estes
+   arquivos nele.
 
 2. **Crie um Personal Access Token (PAT)**:
    - Vá em GitHub → Settings → Developer settings → Personal access tokens
