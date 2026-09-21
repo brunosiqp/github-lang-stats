@@ -31,8 +31,8 @@ jobs:
 
       - name: Commit and push if changed
         run: |
-          git config --local user.email "actions@github.com"
-          git config --local user.name "github-actions"
+          git config --local user.email "168676931+brunosiqp@users.noreply.github.com"
+          git config --local user.name "brunosiqp"
           git add language-stats.svg
           git diff --quiet --cached || git commit -m "chore: atualiza estatísticas de linguagens"
           git push
