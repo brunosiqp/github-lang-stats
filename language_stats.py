@@ -4,6 +4,12 @@ Gera um resumo de % de linguagens usadas em TODOS os repositórios
 (públicos e privados) de uma conta do GitHub, e produz um SVG
 parecido com o card "Most Used Languages" do github-readme-stats.
 
+Como calcula: para cada repositorio (publico ou privado) lê a árvore de
+arquivos, soma o tamanho em bytes de cada arquivo de código por extensão e
+ignora pastas geradas (build/, dist/, node_modules/, venv/ ...). Assim
+artefatos commitados sem querer (ex.: build do PyInstaller) não distorcem
+o resultado, como acontece com a API /languages do GitHub.
+
 Requisitos:
     pip install -r requirements.txt
 
@@ -20,6 +26,8 @@ Uso local:
 
 import os
 import sys
+from html import escape
+
 import requests
 
 API = "https://api.github.com"
@@ -58,8 +66,44 @@ LANGUAGE_COLORS = {
     "Dockerfile": "#384d54",
     "Vue": "#41b883",
     "Jupyter Notebook": "#DA5B0B",
+    "Batchfile": "#C1F12E",
+    "PowerShell": "#012456",
+    "SQL": "#e38c00",
+    "SCSS": "#c6538c",
+    "Lua": "#000080",
+    "R": "#198CE7",
+    "Dart": "#00B4AB",
+    "TeX": "#3D6117",
+    "VBScript": "#15dcdc",
 }
 DEFAULT_COLOR = "#8b8b8b"
+
+# Somente linguagens de programacao/markup (dados e prosa como JSON, YAML e
+# Markdown ficam de fora, igual ao GitHub Linguist).
+EXTENSIONS = {
+    ".py": "Python", ".pyw": "Python",
+    ".js": "JavaScript", ".mjs": "JavaScript", ".cjs": "JavaScript", ".jsx": "JavaScript",
+    ".ts": "TypeScript", ".tsx": "TypeScript",
+    ".html": "HTML", ".htm": "HTML",
+    ".css": "CSS", ".scss": "SCSS",
+    ".java": "Java", ".kt": "Kotlin", ".swift": "Swift", ".dart": "Dart",
+    ".c": "C", ".h": "C",
+    ".cpp": "C++", ".cc": "C++", ".cxx": "C++", ".hpp": "C++",
+    ".cs": "C#", ".go": "Go", ".rs": "Rust", ".php": "PHP", ".rb": "Ruby",
+    ".sh": "Shell", ".bash": "Shell",
+    ".bat": "Batchfile", ".cmd": "Batchfile",
+    ".ps1": "PowerShell", ".psm1": "PowerShell",
+    ".sql": "SQL", ".vue": "Vue", ".lua": "Lua", ".r": "R",
+    ".ipynb": "Jupyter Notebook", ".cmake": "CMake", ".tex": "TeX", ".vbs": "VBScript",
+}
+FILENAMES = {"CMakeLists.txt": "CMake", "Dockerfile": "Dockerfile"}
+
+# Pastas geradas/dependencias: nao sao codigo escrito por voce.
+IGNORED_DIRS = {
+    "build", "dist", "node_modules", "venv", ".venv", "__pycache__",
+    "site-packages", "vendor", "target", "obj", ".git", ".idea", ".vscode",
+    "third_party",
+}
 
 
 def get_repos():
@@ -79,35 +123,55 @@ def get_repos():
     return repos
 
 
-def get_languages(full_name):
-    """Retorna dict {linguagem: bytes} para um repositório."""
-    resp = requests.get(f"{API}/repos/{full_name}/languages", headers=HEADERS, timeout=30)
-    if resp.status_code != 200:
-        return {}
-    return resp.json()
+def language_for(path):
+    """Linguagem de um arquivo pelo caminho, ou None se deve ser ignorado."""
+    parts = path.split("/")
+    if any(p.lower() in IGNORED_DIRS for p in parts[:-1]):
+        return None
+    name = parts[-1]
+    if name in FILENAMES:
+        return FILENAMES[name]
+    return EXTENSIONS.get(os.path.splitext(name)[1].lower())
+
+
+def get_tree(repo):
+    """Arquivos (blobs) da branch padrao do repositorio."""
+    resp = requests.get(
+        f"{API}/repos/{repo['full_name']}/git/trees/{repo['default_branch']}",
+        headers=HEADERS,
+        params={"recursive": "1"},
+        timeout=60,
+    )
+    if resp.status_code != 200:  # 409 = repositorio vazio
+        return []
+    data = resp.json()
+    if data.get("truncated"):
+        print(f"  aviso: arvore truncada em {repo['full_name']} (repo muito grande)")
+    return [e for e in data.get("tree", []) if e["type"] == "blob"]
 
 
 def aggregate_languages(repos):
     totals = {}
     for repo in repos:
-        if repo.get("fork"):
-            continue  # ignora forks, ajuste se quiser incluir
-        langs = get_languages(repo["full_name"])
-        for lang, byte_count in langs.items():
-            totals[lang] = totals.get(lang, 0) + byte_count
+        if repo.get("fork") or repo.get("archived"):
+            continue  # ignora forks/arquivados, ajuste se quiser incluir
+        for entry in get_tree(repo):
+            lang = language_for(entry["path"])
+            if lang:
+                totals[lang] = totals.get(lang, 0) + entry.get("size", 0)
     return totals
 
 
-def to_percentages(totals, min_percent=0.4):
+def to_percentages(totals):
+    """Todas as linguagens, da maior para a menor (sem agrupar em "Other")."""
     total_bytes = sum(totals.values()) or 1
     items = [(lang, bytes_ / total_bytes * 100) for lang, bytes_ in totals.items()]
     items.sort(key=lambda x: x[1], reverse=True)
-    # agrupa linguagens muito pequenas em "Other"
-    main = [i for i in items if i[1] >= min_percent]
-    other = sum(i[1] for i in items if i[1] < min_percent)
-    if other > 0:
-        main.append(("Other", other))
-    return main
+    return items
+
+
+def fmt_pct(pct):
+    return f"{pct:.1f}%" if pct >= 0.1 else "<0.1%"
 
 
 def build_svg(percentages, width=700, height=220, title="Languages"):
@@ -135,7 +199,7 @@ def build_svg(percentages, width=700, height=220, title="Languages"):
         ly = bar_y + bar_height + 40 + row * 26
         legend_items.append(
             f'<circle cx="{lx}" cy="{ly - 5}" r="5" fill="{color}" />'
-            f'<text x="{lx + 14}" y="{ly}" class="legend-text">{lang} {pct:.1f}%</text>'
+            f'<text x="{lx + 14}" y="{ly}" class="legend-text">{escape(f"{lang} {fmt_pct(pct)}")}</text>'
         )
 
     rows_used = (len(percentages) - 1) // 3 + 1
@@ -170,7 +234,7 @@ def main():
     percentages = to_percentages(totals)
     print("\nResultado:")
     for lang, pct in percentages:
-        print(f"  {lang:<20} {pct:.1f}%")
+        print(f"  {lang:<20} {fmt_pct(pct)}")
 
     svg = build_svg(percentages)
     with open("language-stats.svg", "w", encoding="utf-8") as f:
