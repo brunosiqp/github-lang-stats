@@ -5,6 +5,9 @@ on:
     - cron: "0 6 * * *"   # todos os dias às 06:00 UTC
   workflow_dispatch: {}   # permite rodar manualmente pelo GitHub
 
+permissions:
+  contents: write
+
 jobs:
   update-stats:
     runs-on: ubuntu-latest
