@@ -78,7 +78,7 @@ LANGUAGE_COLORS = {
 }
 DEFAULT_COLOR = "#8b8b8b"
 
-# Somente linguagens de programacao/markup (dados e prosa como JSON, YAML e
+# Somente linguagens de programacao/markup (dados e prosa como JSON, YAML, SQL e
 # Markdown ficam de fora, igual ao GitHub Linguist).
 EXTENSIONS = {
     ".py": "Python", ".pyw": "Python",
@@ -93,7 +93,7 @@ EXTENSIONS = {
     ".sh": "Shell", ".bash": "Shell",
     ".bat": "Batchfile", ".cmd": "Batchfile",
     ".ps1": "PowerShell", ".psm1": "PowerShell",
-    ".sql": "SQL", ".vue": "Vue", ".lua": "Lua", ".r": "R",
+    ".vue": "Vue", ".lua": "Lua", ".r": "R",
     ".ipynb": "Jupyter Notebook", ".cmake": "CMake", ".tex": "TeX", ".vbs": "VBScript",
 }
 FILENAMES = {"CMakeLists.txt": "CMake", "Dockerfile": "Dockerfile"}
