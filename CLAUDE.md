@@ -17,7 +17,7 @@ embedded in `README.md` via `./language-stats.svg` and refreshed daily by a GitH
 | Path | Purpose |
 |---|---|
 | `language_stats.py` | The whole tool: fetch repos, sum bytes per language, render SVG |
-| `requirements.txt` | Only `requests` |
+| `requirements.txt` | `requests` and `PyYAML` (to parse Linguist's `languages.yml`) |
 | `.github/workflows/update-language-stats.yml` | Daily cron (06:00 UTC) + `workflow_dispatch`; runs the script and commits the SVG |
 | `language-stats.svg` | Generated output. **Never edit by hand**; the workflow overwrites it |
 
@@ -41,15 +41,26 @@ gh run watch -R brunosiqp/github-lang-stats
 `language_stats.py` does **not** use the GitHub `/languages` endpoint. That endpoint counted
 accidentally committed build output (PyInstaller `build/*.toc` showed up as 88% "TeX"). Instead:
 
-1. `get_repos()` lists owned repos (`/user/repos?type=owner`); forks and archived repos are skipped.
-2. `get_tree()` reads the recursive git tree of the default branch; `language_for()` maps each file
-   to a language by extension (`EXTENSIONS`) or filename (`FILENAMES`).
-3. Files under `IGNORED_DIRS` (`build`, `dist`, `node_modules`, `venv`, ...) are ignored.
-4. `.sql`, JSON, YAML and Markdown are intentionally **not** counted (data/prose, like GitHub Linguist).
+1. `load_linguist()` downloads GitHub Linguist's `languages.yml` (through the API, so it works with
+   the token) and fills `EXT_CANDIDATES` / `NAME_CANDIDATES` / `LANGUAGE_COLORS` with **every**
+   language GitHub knows, with official colors. Only `programming` and `markup` types are counted;
+   `data`/`prose` extensions go to `UNCOUNTED_KEYS`. If the download fails, the built-in
+   `EXTENSIONS` / `FILENAMES` / `LANGUAGE_COLORS` tables are used as fallback.
+2. `get_repos()` lists owned repos (`/user/repos?type=owner`), so new public and private repos are
+   picked up automatically; forks and archived repos are skipped.
+3. `get_tree()` reads the recursive git tree of the default branch; `language_for()` maps each file
+   by exact filename or longest extension (`.d.ts` before `.ts`).
+4. Ambiguous extensions are resolved with the repo's `/languages` result (only a hint, never summed):
+   `.gd` → GDScript (not GAP) in a Godot repo. Without a hint, the `EXTENSIONS` entry wins; an
+   extension also claimed by data/prose (`.md` = Markdown and "GCC Machine Description") is not counted.
+5. Files under `IGNORED_DIRS` (`build`, `dist`, `node_modules`, `venv`, ...) are ignored.
+6. `IGNORED_EXTENSIONS` (`.sql`) are never counted, even though Linguist also maps `.sql` to TSQL/PLSQL.
    Generated multi-MB `.sql` files otherwise made SQL 94% of the chart.
-5. `to_percentages()` returns every language, sorted, with no "Other" bucket; values below 0.1% render as `<0.1%`.
+7. `to_percentages()` returns every language, sorted, with no "Other" bucket; `fmt_pct()` adds decimals
+   to small values (`0.04%`, `0.003%`) so no language shows as zero.
 
-When adding a language: add its extension to `EXTENSIONS` and a color to `LANGUAGE_COLORS`.
+A new language usually needs no code change. Add to `EXTENSIONS` only to set a preference for an
+ambiguous extension (and to the fallback `LANGUAGE_COLORS`).
 
 ## Conventions and gotchas
 
@@ -58,7 +69,8 @@ When adding a language: add its extension to `EXTENSIONS` and a color to `LANGUA
 - The workflow needs `permissions: contents: write` and the repository secret `GH_PAT`.
   `GITHUB_TOKEN` cannot see other repos, so a personal token is required.
 - SVG text must be XML-escaped (`html.escape`); a raw `<0.1%` once broke the file.
-- Keep the script dependency-free apart from `requests`; target Python 3.12 (used by the workflow).
+- Keep the script dependency-free apart from `requests` and `PyYAML`; target Python 3.12 (used by the workflow).
+- The Actions log is public: never print repo names (private repos would leak), only aggregates.
 - Test changes offline (`language_for()`, `build_svg()` + `xml.dom.minidom.parseString`) before running
   against the API. Do not commit `__pycache__/` (it is git-ignored).
 
