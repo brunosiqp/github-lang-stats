@@ -10,6 +10,12 @@ ignora pastas geradas (build/, dist/, node_modules/, venv/ ...). Assim
 artefatos commitados sem querer (ex.: build do PyInstaller) não distorcem
 o resultado, como acontece com a API /languages do GitHub.
 
+A tabela extensão -> linguagem (e as cores) vem do GitHub Linguist
+(languages.yml), baixada a cada execução: qualquer linguagem que o GitHub
+reconhece (GDScript, GDShader, ...) entra no cálculo sem editar este arquivo.
+Extensões ambíguas (ex.: .gd = GDScript ou GAP) são resolvidas pelas
+linguagens que o próprio GitHub detectou no repositório.
+
 Requisitos:
     pip install -r requirements.txt
 
@@ -29,6 +35,7 @@ import sys
 from html import escape
 
 import requests
+import yaml
 
 API = "https://api.github.com"
 
@@ -43,8 +50,13 @@ HEADERS = {
     "Accept": "application/vnd.github+json",
 }
 
-# Cores aproximadas do GitHub Linguist para as linguagens mais comuns.
-# Qualquer linguagem fora dessa lista recebe uma cor cinza padrão.
+# Tabela oficial de linguagens do GitHub (extensoes, nomes de arquivo e cores).
+LINGUIST_URL = f"{API}/repos/github-linguist/linguist/contents/lib/linguist/languages.yml"
+# Tipos que o GitHub conta na barra de linguagens (data e prose ficam de fora).
+COUNTED_TYPES = {"programming", "markup"}
+
+# Cores de reserva, usadas se o languages.yml do Linguist nao puder ser baixado.
+# Qualquer linguagem sem cor recebe um cinza padrão.
 LANGUAGE_COLORS = {
     "Python": "#3572A5",
     "JavaScript": "#f1e05a",
@@ -75,9 +87,13 @@ LANGUAGE_COLORS = {
     "Dart": "#00B4AB",
     "TeX": "#3D6117",
     "VBScript": "#15dcdc",
+    "GDScript": "#355570",
+    "GDShader": "#478CBF",
 }
 DEFAULT_COLOR = "#8b8b8b"
 
+# Mapeamento preferido, e de reserva se o Linguist nao puder ser baixado: quando
+# uma extensao pertence a varias linguagens, a daqui vem primeiro.
 # Somente linguagens de programacao/markup (dados e prosa como JSON, YAML, SQL e
 # Markdown ficam de fora, igual ao GitHub Linguist).
 EXTENSIONS = {
@@ -95,8 +111,21 @@ EXTENSIONS = {
     ".ps1": "PowerShell", ".psm1": "PowerShell",
     ".vue": "Vue", ".lua": "Lua", ".r": "R",
     ".ipynb": "Jupyter Notebook", ".cmake": "CMake", ".tex": "TeX", ".vbs": "VBScript",
+    ".gd": "GDScript", ".gdshader": "GDShader", ".gdshaderinc": "GDShader",
 }
 FILENAMES = {"CMakeLists.txt": "CMake", "Dockerfile": "Dockerfile"}
+
+# Nunca contadas, mesmo que o Linguist as associe a uma linguagem de programacao
+# (.sql tambem e TSQL/PLSQL): dumps .sql gerados chegaram a ser 94% do grafico.
+IGNORED_EXTENSIONS = {".sql"}
+
+# extensao / nome de arquivo -> linguagens candidatas (a preferida primeiro).
+# load_linguist() completa com todas as linguagens do GitHub.
+EXT_CANDIDATES = {ext: [lang] for ext, lang in EXTENSIONS.items()}
+NAME_CANDIDATES = {name: [lang] for name, lang in FILENAMES.items()}
+# Extensoes/nomes que tambem pertencem a dados ou prosa (.md = Markdown e
+# "GCC Machine Description"): so contam se o GitHub detectou a linguagem no repo.
+UNCOUNTED_KEYS = set()
 
 # Pastas geradas/dependencias: nao sao codigo escrito por voce.
 IGNORED_DIRS = {
@@ -123,15 +152,70 @@ def get_repos():
     return repos
 
 
-def language_for(path):
-    """Linguagem de um arquivo pelo caminho, ou None se deve ser ignorado."""
+def load_linguist():
+    """Completa EXT_CANDIDATES, NAME_CANDIDATES e LANGUAGE_COLORS com o Linguist."""
+    try:
+        resp = requests.get(
+            LINGUIST_URL,
+            headers={**HEADERS, "Accept": "application/vnd.github.raw"},
+            timeout=60,
+        )
+        resp.raise_for_status()
+        languages = yaml.safe_load(resp.text)
+    except (requests.RequestException, yaml.YAMLError) as exc:
+        print(f"  aviso: languages.yml do Linguist indisponivel ({exc}); usando tabela interna")
+        return
+    for lang, info in languages.items():
+        if info.get("color"):
+            LANGUAGE_COLORS[lang] = info["color"]
+        counted = info.get("type") in COUNTED_TYPES
+        for table, keys in (
+            (EXT_CANDIDATES, [e.lower() for e in info.get("extensions", [])]),
+            (NAME_CANDIDATES, info.get("filenames", [])),
+        ):
+            for key in keys:
+                if not counted:
+                    UNCOUNTED_KEYS.add(key)
+                    continue
+                candidates = table.setdefault(key, [])
+                if lang not in candidates:
+                    candidates.append(lang)
+    print(f"  {len(languages)} linguagens carregadas do GitHub Linguist.")
+
+
+def lookup_key(name):
+    """Chave do arquivo nas tabelas: o nome exato ou a extensao mais longa (.d.ts > .ts)."""
+    if name in NAME_CANDIDATES or name in UNCOUNTED_KEYS:
+        return name
+    lower = name.lower()
+    for i, ch in enumerate(lower):
+        if ch == "." and (lower[i:] in EXT_CANDIDATES or lower[i:] in UNCOUNTED_KEYS
+                          or lower[i:] in IGNORED_EXTENSIONS):
+            return lower[i:]
+    return None
+
+
+def language_for(path, repo_languages=()):
+    """Linguagem de um arquivo pelo caminho, ou None se deve ser ignorado.
+
+    repo_languages sao as linguagens que o GitHub detectou no repositorio e
+    desempatam extensoes ambiguas (.gd -> GDScript em vez de GAP).
+    """
     parts = path.split("/")
     if any(p.lower() in IGNORED_DIRS for p in parts[:-1]):
         return None
-    name = parts[-1]
-    if name in FILENAMES:
-        return FILENAMES[name]
-    return EXTENSIONS.get(os.path.splitext(name)[1].lower())
+    key = lookup_key(parts[-1])
+    if key is None or key in IGNORED_EXTENSIONS:
+        return None
+    candidates = NAME_CANDIDATES.get(key) or EXT_CANDIDATES.get(key, [])
+    in_repo = [lang for lang in candidates if lang in repo_languages]
+    if in_repo:
+        return in_repo[0]
+    if key in EXTENSIONS or key in FILENAMES:
+        return candidates[0]
+    if not candidates or key in UNCOUNTED_KEYS:
+        return None
+    return candidates[0]
 
 
 def get_tree(repo):
@@ -142,23 +226,37 @@ def get_tree(repo):
         params={"recursive": "1"},
         timeout=60,
     )
-    if resp.status_code != 200:  # 409 = repositorio vazio
+    if resp.status_code == 409:  # repositorio vazio
+        return []
+    if resp.status_code != 200:
+        # Sem o nome do repo: o log do Actions e publico e o repo pode ser privado.
+        print(f"  aviso: nao foi possivel ler um repositorio (HTTP {resp.status_code})")
         return []
     data = resp.json()
     if data.get("truncated"):
-        print(f"  aviso: arvore truncada em {repo['full_name']} (repo muito grande)")
+        print("  aviso: arvore truncada em um repositorio (repo muito grande)")
     return [e for e in data.get("tree", []) if e["type"] == "blob"]
+
+
+def get_repo_languages(repo):
+    """Linguagens que o GitHub detectou no repo (usadas so para desempate)."""
+    resp = requests.get(repo["languages_url"], headers=HEADERS, timeout=30)
+    return set(resp.json()) if resp.status_code == 200 else set()
 
 
 def aggregate_languages(repos):
     totals = {}
+    analyzed = 0
     for repo in repos:
         if repo.get("fork") or repo.get("archived"):
             continue  # ignora forks/arquivados, ajuste se quiser incluir
+        analyzed += 1
+        repo_languages = get_repo_languages(repo)
         for entry in get_tree(repo):
-            lang = language_for(entry["path"])
+            lang = language_for(entry["path"], repo_languages)
             if lang:
                 totals[lang] = totals.get(lang, 0) + entry.get("size", 0)
+    print(f"  {analyzed} repositórios analisados (forks e arquivados ficam de fora).")
     return totals
 
 
@@ -171,7 +269,13 @@ def to_percentages(totals):
 
 
 def fmt_pct(pct):
-    return f"{pct:.1f}%" if pct >= 0.1 else "<0.1%"
+    """1 casa decimal; valores pequenos ganham casas ate aparecer (0.04%, 0.003%)."""
+    if round(pct, 1) >= 0.1:
+        return f"{pct:.1f}%"
+    for decimals in range(2, 7):
+        if round(pct, decimals) > 0:
+            return f"{pct:.{decimals}f}%"
+    return "<0.000001%"
 
 
 def build_svg(percentages, width=700, height=220, title="Languages"):
@@ -224,6 +328,9 @@ def build_svg(percentages, width=700, height=220, title="Languages"):
 
 
 def main():
+    print("Carregando tabela de linguagens...")
+    load_linguist()
+
     print("Buscando repositórios...")
     repos = get_repos()
     print(f"{len(repos)} repositórios encontrados (públicos + privados).")
