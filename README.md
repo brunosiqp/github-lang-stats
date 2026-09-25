@@ -63,11 +63,22 @@ cada linguagem no terminal.
 
 Para cada repositório seu (públicos **e privados**), o script lê a árvore de
 arquivos da branch padrão e soma o tamanho em bytes dos arquivos de código,
-classificando pela extensão. Pastas geradas ou de dependências (`build/`,
-`dist/`, `node_modules/`, `venv/`, ...) são ignoradas, então artefatos
-commitados sem querer (por exemplo, o `build/` do PyInstaller) não distorcem
-o resultado. Todas as linguagens encontradas aparecem no gráfico, sem
-agrupar em "Other". Forks e repositórios arquivados são ignorados.
+classificando pela extensão. Repositórios novos entram sozinhos na próxima
+execução diária.
+
+A tabela de extensões e cores vem do [GitHub Linguist](https://github.com/github-linguist/linguist)
+(a mesma que o GitHub usa), baixada a cada execução, então qualquer linguagem
+que o GitHub reconhece (GDScript, GDShader, ...) é contada sem mexer no código.
+Extensões ambíguas (`.gd` pode ser GDScript ou GAP) são resolvidas pelas
+linguagens que o próprio GitHub detectou naquele repositório.
+
+Pastas geradas ou de dependências (`build/`, `dist/`, `node_modules/`,
+`venv/`, ...) são ignoradas, então artefatos commitados sem querer (por
+exemplo, o `build/` do PyInstaller, que o GitHub mostra como "TeX") não
+distorcem o resultado. Dados e prosa (JSON, YAML, SQL, Markdown) também não
+contam, como no GitHub. Todas as linguagens encontradas aparecem no gráfico,
+sem agrupar em "Other", mesmo com porcentagens muito pequenas (`0.03%`).
+Forks e repositórios arquivados são ignorados.
 
 ## Personalizações possíveis
 
@@ -76,5 +87,5 @@ agrupar em "Other". Forks e repositórios arquivados são ignorados.
 - **Analisar uma organização**: defina `GH_USER=nome-da-org` (o token
   precisa ter acesso a ela).
 - **Ignorar mais pastas**: adicione nomes em `IGNORED_DIRS`.
-- **Reconhecer outra linguagem**: adicione a extensão em `EXTENSIONS` e a
-  cor em `LANGUAGE_COLORS`.
+- **Preferir uma linguagem numa extensão ambígua**: adicione a extensão em
+  `EXTENSIONS` (linguagens novas já vêm do Linguist automaticamente).
