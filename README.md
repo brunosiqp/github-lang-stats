@@ -37,8 +37,10 @@ card "Most Used Languages".
    > necessário um PAT pessoal.
 
 4. **Pronto.** O workflow em
-   `.github/workflows/update-language-stats.yml` roda todo dia às 06h
-   (UTC) e sempre que você disparar manualmente em Actions → Run workflow.
+   `.github/workflows/update-language-stats.yml` roda todo dia às 08h e
+   às 15h (horário de Brasília) e sempre que você disparar manualmente em
+   Actions → Run workflow. O GitHub pode atrasar execuções agendadas em
+   horários de pico.
    Ele gera/atualiza o arquivo `language-stats.svg` e faz commit
    automaticamente.
 
@@ -61,10 +63,17 @@ cada linguagem no terminal.
 
 ## Como o cálculo funciona
 
-Para cada repositório seu (públicos **e privados**), o script lê a árvore de
-arquivos da branch padrão e soma o tamanho em bytes dos arquivos de código,
-classificando pela extensão. Repositórios novos entram sozinhos na próxima
-execução diária.
+Para cada repositório seu (públicos **e privados**, inclusive arquivados), o
+script lê a árvore de arquivos da branch padrão e soma o tamanho em bytes dos
+arquivos de código, classificando pela extensão. Repositórios novos entram
+sozinhos na próxima execução.
+
+As contribuições também contam, mas só o que é seu:
+
+- **Forks**: só os arquivos que você mudou em relação ao projeto original.
+- **Repositórios de outras pessoas ou organizações** (em que você é
+  colaborador, membro ou mandou commits/PRs): só os arquivos que seus commits
+  tocaram.
 
 A tabela de extensões e cores vem do [GitHub Linguist](https://github.com/github-linguist/linguist)
 (a mesma que o GitHub usa), baixada a cada execução, então qualquer linguagem
@@ -78,11 +87,10 @@ exemplo, o `build/` do PyInstaller, que o GitHub mostra como "TeX") não
 distorcem o resultado. Dados e prosa (JSON, YAML, SQL, Markdown) também não
 contam, como no GitHub. Todas as linguagens encontradas aparecem no gráfico,
 sem agrupar em "Other", mesmo com porcentagens muito pequenas (`0.03%`).
-Forks e repositórios arquivados são ignorados.
 
 ## Personalizações possíveis
 
-- **Incluir forks/arquivados**: ajuste a condição em `aggregate_languages()`
+- **Mudar o que conta em forks/contribuições**: ajuste `aggregate_languages()`
   em `language_stats.py`.
 - **Analisar uma organização**: defina `GH_USER=nome-da-org` (o token
   precisa ter acesso a ela).

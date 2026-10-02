@@ -18,7 +18,7 @@ embedded in `README.md` via `./language-stats.svg` and refreshed daily by a GitH
 |---|---|
 | `language_stats.py` | The whole tool: fetch repos, sum bytes per language, render SVG |
 | `requirements.txt` | `requests` and `PyYAML` (to parse Linguist's `languages.yml`) |
-| `.github/workflows/update-language-stats.yml` | Daily cron (06:00 UTC) + `workflow_dispatch`; runs the script and commits the SVG |
+| `.github/workflows/update-language-stats.yml` | Cron twice a day (08:00 and 15:00 Brasília = 11:00/18:00 UTC) + `workflow_dispatch`; runs the script and commits the SVG |
 | `language-stats.svg` | Generated output. **Never edit by hand**; the workflow overwrites it |
 
 ## Commands
@@ -46,8 +46,14 @@ accidentally committed build output (PyInstaller `build/*.toc` showed up as 88% 
    language GitHub knows, with official colors. Only `programming` and `markup` types are counted;
    `data`/`prose` extensions go to `UNCOUNTED_KEYS`. If the download fails, the built-in
    `EXTENSIONS` / `FILENAMES` / `LANGUAGE_COLORS` tables are used as fallback.
-2. `get_repos()` lists owned repos (`/user/repos?type=owner`), so new public and private repos are
-   picked up automatically; forks and archived repos are skipped.
+2. `get_repos()` lists owned repos (`/user/repos?type=owner`, including forks and archived), so new
+   public and private repos are picked up automatically. `get_contributed_repos()` adds other people's
+   and organizations' repos (collaborator / organization member, plus GraphQL
+   `repositoriesContributedTo` for commits and PRs). `aggregate_languages()` counts:
+   - owned non-fork repos: every file;
+   - forks: only files changed vs. upstream (`fork_files()`, compare API), never the upstream code;
+   - third-party repos: only files touched by the user's last 100 commits (`authored_files()`).
+   Files are counted at full size once touched (not per changed line).
 3. `get_tree()` reads the recursive git tree of the default branch; `language_for()` maps each file
    by exact filename or longest extension (`.d.ts` before `.ts`).
 4. Ambiguous extensions are resolved with the repo's `/languages` result (only a hint, never summed):

@@ -2,11 +2,16 @@ name: Update language stats
 
 on:
   schedule:
-    - cron: "0 6 * * *"   # todos os dias às 06:00 UTC
-  workflow_dispatch: {}   # permite rodar manualmente pelo GitHub
+    - cron: "0 11,18 * * *"   # todos os dias às 08:00 e 15:00 de Brasília (UTC-3)
+  workflow_dispatch: {}       # permite rodar manualmente pelo GitHub
 
 permissions:
   contents: write
+
+# Evita duas execuções ao mesmo tempo disputando o push do SVG.
+concurrency:
+  group: update-language-stats
+  cancel-in-progress: false
 
 jobs:
   update-stats:
@@ -35,4 +40,5 @@ jobs:
           git config --local user.name "brunosiqp"
           git add language-stats.svg
           git diff --quiet --cached || git commit -m "chore: atualiza estatísticas de linguagens"
+          git pull --rebase
           git push
