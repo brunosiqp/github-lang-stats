@@ -134,22 +134,99 @@ IGNORED_DIRS = {
     "third_party",
 }
 
+# Em repos de outras pessoas, quantos commits do usuario sao lidos (o maximo por pagina).
+MAX_COMMITS_PER_REPO = 100
 
-def get_repos():
-    """Lista todos os repositórios do usuário/organização (owner, público+privado)."""
-    repos = []
+CONTRIBUTED_QUERY = """
+query($login: String!) {
+  user(login: $login) {
+    repositoriesContributedTo(first: 100, includeUserRepositories: false,
+                              contributionTypes: [COMMIT, PULL_REQUEST]) {
+      nodes { nameWithOwner }
+    }
+  }
+}"""
+
+
+def get_json(url, params=None):
+    """GET na API; None se a resposta nao for 200 (repo vazio, sem acesso...)."""
+    resp = requests.get(url, headers=HEADERS, params=params, timeout=60)
+    return resp.json() if resp.status_code == 200 else None
+
+
+def get_all_pages(url, params):
+    items = []
     page = 1
-    base_url = f"{API}/user/repos" if not USERNAME else f"{API}/users/{USERNAME}/repos"
     while True:
-        params = {"per_page": 100, "page": page, "type": "owner"}
-        resp = requests.get(base_url, headers=HEADERS, params=params, timeout=30)
+        resp = requests.get(url, headers=HEADERS, params={**params, "per_page": 100, "page": page}, timeout=30)
         resp.raise_for_status()
         batch = resp.json()
         if not batch:
             break
-        repos.extend(batch)
+        items.extend(batch)
         page += 1
-    return repos
+    return items
+
+
+def get_login():
+    """Usuario analisado: GH_USER ou o dono do token."""
+    if USERNAME:
+        return USERNAME
+    resp = requests.get(f"{API}/user", headers=HEADERS, timeout=30)
+    resp.raise_for_status()
+    return resp.json()["login"]
+
+
+def get_repos():
+    """Todos os repositórios do usuário/organização (owner, público+privado, forks e arquivados)."""
+    base_url = f"{API}/user/repos" if not USERNAME else f"{API}/users/{USERNAME}/repos"
+    return get_all_pages(base_url, {"type": "owner"})
+
+
+def get_contributed_repos(login, owned):
+    """Repos de outras pessoas/organizações em que o usuário tem acesso ou contribuiu."""
+    names = set()
+    if not USERNAME:
+        repos = get_all_pages(f"{API}/user/repos", {"affiliation": "collaborator,organization_member"})
+        names.update(repo["full_name"] for repo in repos)
+    resp = requests.post(
+        f"{API}/graphql",
+        headers=HEADERS,
+        json={"query": CONTRIBUTED_QUERY, "variables": {"login": login}},
+        timeout=60,
+    )
+    user = ((resp.json().get("data") or {}).get("user") or {}) if resp.status_code == 200 else {}
+    if not user:
+        print(f"  aviso: nao foi possivel listar contribuicoes (HTTP {resp.status_code})")
+    nodes = (user.get("repositoriesContributedTo") or {}).get("nodes", [])
+    names.update(node["nameWithOwner"] for node in nodes)
+    repos = (get_json(f"{API}/repos/{name}") for name in sorted(names - owned))
+    return [repo for repo in repos if repo]
+
+
+def fork_files(repo):
+    """Arquivos que o fork mudou em relação ao repo original (as contribuições do usuário)."""
+    parent = repo.get("parent") or (get_json(repo["url"]) or {}).get("parent")
+    if not parent:
+        return set()
+    data = get_json(
+        f"{API}/repos/{parent['full_name']}/compare/"
+        f"{parent['default_branch']}...{repo['owner']['login']}:{repo['default_branch']}"
+    )
+    return {f["filename"] for f in (data or {}).get("files", []) if f["status"] != "removed"}
+
+
+def authored_files(repo, login):
+    """Arquivos tocados pelos commits do usuário num repo de outra pessoa."""
+    commits = get_json(
+        f"{API}/repos/{repo['full_name']}/commits",
+        {"author": login, "per_page": MAX_COMMITS_PER_REPO},
+    ) or []
+    files = set()
+    for commit in commits:
+        detail = get_json(commit["url"]) or {}
+        files.update(f["filename"] for f in detail.get("files", []) if f["status"] != "removed")
+    return files
 
 
 def load_linguist():
@@ -244,19 +321,35 @@ def get_repo_languages(repo):
     return set(resp.json()) if resp.status_code == 200 else set()
 
 
-def aggregate_languages(repos):
+def aggregate_languages(repos, login):
+    """Soma bytes por linguagem.
+
+    Repos próprios contam inteiros. Em forks e em repos de outras pessoas só
+    contam os arquivos que o usuário mudou, para não somar código alheio.
+    """
     totals = {}
-    analyzed = 0
+    counts = {"proprios": 0, "forks": 0, "terceiros": 0}
     for repo in repos:
-        if repo.get("fork") or repo.get("archived"):
-            continue  # ignora forks/arquivados, ajuste se quiser incluir
-        analyzed += 1
+        if repo["owner"]["login"].lower() != login.lower():
+            kind, only = "terceiros", authored_files(repo, login)
+        elif repo.get("fork"):
+            kind, only = "forks", fork_files(repo)
+        else:
+            kind, only = "proprios", None
+        if only is not None and not only:
+            continue  # fork/repo alheio sem nenhuma mudança do usuário
+        counts[kind] += 1
         repo_languages = get_repo_languages(repo)
         for entry in get_tree(repo):
+            if only is not None and entry["path"] not in only:
+                continue
             lang = language_for(entry["path"], repo_languages)
             if lang:
                 totals[lang] = totals.get(lang, 0) + entry.get("size", 0)
-    print(f"  {analyzed} repositórios analisados (forks e arquivados ficam de fora).")
+    print(
+        f"  {counts['proprios']} repositórios próprios, {counts['forks']} forks e "
+        f"{counts['terceiros']} repositórios de terceiros com contribuições suas."
+    )
     return totals
 
 
@@ -332,11 +425,14 @@ def main():
     load_linguist()
 
     print("Buscando repositórios...")
+    login = get_login()
     repos = get_repos()
-    print(f"{len(repos)} repositórios encontrados (públicos + privados).")
+    print(f"{len(repos)} repositórios seus encontrados (públicos + privados).")
+    contributed = get_contributed_repos(login, {repo["full_name"] for repo in repos})
+    print(f"{len(contributed)} repositórios de terceiros com acesso ou contribuição.")
 
     print("Somando bytes de código por linguagem...")
-    totals = aggregate_languages(repos)
+    totals = aggregate_languages(repos + contributed, login)
 
     percentages = to_percentages(totals)
     print("\nResultado:")
