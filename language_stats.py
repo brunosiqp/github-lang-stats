@@ -371,47 +371,54 @@ def fmt_pct(pct):
     return "<0.000001%"
 
 
-def build_svg(percentages, width=700, height=220, title="Languages"):
-    bar_height = 24
-    bar_y = 60
-    x = 20
-    bar_width = width - 40
+def build_svg(percentages, width=830, title="Most Used Languages"):
+    pad = 28
+    bar_y = 88
+    bar_height = 12
+    bar_width = width - 2 * pad
+    columns = 4
+    col_width = bar_width / columns
+    legend_y = bar_y + bar_height + 40
+    row_height = 28
 
     segments = []
     legend_items = []
-    cursor = x
+    cursor = pad
     for i, (lang, pct) in enumerate(percentages):
         color = LANGUAGE_COLORS.get(lang, DEFAULT_COLOR)
         seg_width = bar_width * (pct / 100)
-        rx = 6 if i == 0 else 0
         segments.append(
             f'<rect x="{cursor:.2f}" y="{bar_y}" width="{seg_width:.2f}" '
             f'height="{bar_height}" fill="{color}" />'
         )
         cursor += seg_width
 
-        col = i % 3
-        row = i // 3
-        lx = x + col * 220
-        ly = bar_y + bar_height + 40 + row * 26
+        row, col = divmod(i, columns)
+        lx = pad + col * col_width
+        ly = legend_y + row * row_height
         legend_items.append(
-            f'<circle cx="{lx}" cy="{ly - 5}" r="5" fill="{color}" />'
-            f'<text x="{lx + 14}" y="{ly}" class="legend-text">{escape(f"{lang} {fmt_pct(pct)}")}</text>'
+            f'<circle cx="{lx + 5:.1f}" cy="{ly - 4}" r="5" fill="{color}" />'
+            f'<text x="{lx + 18:.1f}" y="{ly}"><tspan class="name">{escape(lang)}</tspan>'
+            f'<tspan dx="6" class="pct">{escape(fmt_pct(pct))}</tspan></text>'
         )
 
-    rows_used = (len(percentages) - 1) // 3 + 1
-    total_height = bar_y + bar_height + 50 + rows_used * 26
+    rows_used = (len(percentages) - 1) // columns + 1
+    total_height = legend_y + (rows_used - 1) * row_height + 30
 
     svg = f'''<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{total_height}" viewBox="0 0 {width} {total_height}">
   <style>
     .title {{ font: 600 20px 'Segoe UI', Ubuntu, Sans-Serif; fill: #ffffff; }}
-    .legend-text {{ font: 400 13px 'Segoe UI', Ubuntu, Sans-Serif; fill: #d0d0d0; }}
+    .subtitle {{ font: 400 13px 'Segoe UI', Ubuntu, Sans-Serif; fill: #8b949e; }}
+    .name {{ font: 400 13px 'Segoe UI', Ubuntu, Sans-Serif; fill: #c9d1d9; }}
+    .pct {{ font: 600 13px 'Segoe UI', Ubuntu, Sans-Serif; fill: #8b949e; }}
   </style>
-  <rect width="100%" height="100%" rx="8" fill="#0d1117" />
-  <text x="20" y="35" class="title">{title}</text>
+  <rect x="0.5" y="0.5" width="{width - 1}" height="{total_height - 1}" rx="12" fill="#0d1117" stroke="#30363d" />
+  <text x="{pad}" y="44" class="title">{escape(title)}</text>
+  <text x="{pad}" y="66" class="subtitle">All repositories · public and private · by code size</text>
   <clipPath id="barClip">
-    <rect x="{x}" y="{bar_y}" width="{bar_width}" height="{bar_height}" rx="{bar_height/2:.1f}" />
+    <rect x="{pad}" y="{bar_y}" width="{bar_width}" height="{bar_height}" rx="{bar_height / 2:.1f}" />
   </clipPath>
+  <rect x="{pad}" y="{bar_y}" width="{bar_width}" height="{bar_height}" rx="{bar_height / 2:.1f}" fill="#161b22" />
   <g clip-path="url(#barClip)">
     {''.join(segments)}
   </g>
