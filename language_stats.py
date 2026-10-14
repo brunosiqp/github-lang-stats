@@ -1,31 +1,31 @@
 #!/usr/bin/env python3
 """
-Gera um resumo de % de linguagens usadas em TODOS os repositórios
-(públicos e privados) de uma conta do GitHub, e produz um SVG
-parecido com o card "Most Used Languages" do github-readme-stats.
+Builds a summary of the % of languages used across ALL repositories
+(public and private) of a GitHub account and renders an SVG similar to
+the "Most Used Languages" card from github-readme-stats.
 
-Como calcula: para cada repositorio (publico ou privado) lê a árvore de
-arquivos, soma o tamanho em bytes de cada arquivo de código por extensão e
-ignora pastas geradas (build/, dist/, node_modules/, venv/ ...). Assim
-artefatos commitados sem querer (ex.: build do PyInstaller) não distorcem
-o resultado, como acontece com a API /languages do GitHub.
+How it works: for each repository (public or private) it reads the file
+tree, sums the size in bytes of every code file by extension and ignores
+generated folders (build/, dist/, node_modules/, venv/ ...). That way,
+accidentally committed artifacts (e.g. a PyInstaller build) do not skew the
+result, as they do with GitHub's /languages API.
 
-A tabela extensão -> linguagem (e as cores) vem do GitHub Linguist
-(languages.yml), baixada a cada execução: qualquer linguagem que o GitHub
-reconhece (GDScript, GDShader, ...) entra no cálculo sem editar este arquivo.
-Extensões ambíguas (ex.: .gd = GDScript ou GAP) são resolvidas pelas
-linguagens que o próprio GitHub detectou no repositório.
+The extension -> language table (and the colors) comes from GitHub Linguist
+(languages.yml), downloaded on every run: any language GitHub recognizes
+(GDScript, GDShader, ...) is counted without editing this file. Ambiguous
+extensions (e.g. .gd = GDScript or GAP) are resolved with the languages
+GitHub itself detected in the repository.
 
-Requisitos:
+Requirements:
     pip install -r requirements.txt
 
-Variáveis de ambiente esperadas:
-    GH_TOKEN   -> Personal Access Token com escopo "repo" (para ler
-                  repositórios privados) e "read:user".
-    GH_USER    -> (opcional) usuário/organização a analisar.
-                  Se não definido, usa o dono do token (o "eu mesmo").
+Environment variables:
+    GH_TOKEN   -> Personal Access Token with the "repo" scope (to read
+                  private repositories) and "read:user".
+    GH_USER    -> (optional) user/organization to analyze.
+                  Defaults to the token owner.
 
-Uso local:
+Local usage:
     export GH_TOKEN=ghp_xxx
     python language_stats.py
 """
@@ -40,23 +40,23 @@ import yaml
 API = "https://api.github.com"
 
 TOKEN = os.environ.get("GH_TOKEN")
-USERNAME = os.environ.get("GH_USER")  # opcional
+USERNAME = os.environ.get("GH_USER")  # optional
 
 if not TOKEN:
-    sys.exit("Defina a variável de ambiente GH_TOKEN com um Personal Access Token.")
+    sys.exit("Set the GH_TOKEN environment variable to a Personal Access Token.")
 
 HEADERS = {
     "Authorization": f"token {TOKEN}",
     "Accept": "application/vnd.github+json",
 }
 
-# Tabela oficial de linguagens do GitHub (extensoes, nomes de arquivo e cores).
+# GitHub's official language table (extensions, filenames and colors).
 LINGUIST_URL = f"{API}/repos/github-linguist/linguist/contents/lib/linguist/languages.yml"
-# Tipos que o GitHub conta na barra de linguagens (data e prose ficam de fora).
+# Types GitHub counts in its language bar (data and prose are left out).
 COUNTED_TYPES = {"programming", "markup"}
 
-# Cores de reserva, usadas se o languages.yml do Linguist nao puder ser baixado.
-# Qualquer linguagem sem cor recebe um cinza padrão.
+# Fallback colors, used if Linguist's languages.yml cannot be downloaded.
+# Any language without a color gets a default gray.
 LANGUAGE_COLORS = {
     "Python": "#3572A5",
     "JavaScript": "#f1e05a",
@@ -92,10 +92,10 @@ LANGUAGE_COLORS = {
 }
 DEFAULT_COLOR = "#8b8b8b"
 
-# Mapeamento preferido, e de reserva se o Linguist nao puder ser baixado: quando
-# uma extensao pertence a varias linguagens, a daqui vem primeiro.
-# Somente linguagens de programacao/markup (dados e prosa como JSON, YAML, SQL e
-# Markdown ficam de fora, igual ao GitHub Linguist).
+# Preferred mapping, and fallback if Linguist cannot be downloaded: when an
+# extension belongs to several languages, the one here comes first.
+# Programming/markup languages only (data and prose such as JSON, YAML, SQL and
+# Markdown are left out, like GitHub Linguist does).
 EXTENSIONS = {
     ".py": "Python", ".pyw": "Python",
     ".js": "JavaScript", ".mjs": "JavaScript", ".cjs": "JavaScript", ".jsx": "JavaScript",
@@ -115,26 +115,26 @@ EXTENSIONS = {
 }
 FILENAMES = {"CMakeLists.txt": "CMake", "Dockerfile": "Dockerfile"}
 
-# Nunca contadas, mesmo que o Linguist as associe a uma linguagem de programacao
-# (.sql tambem e TSQL/PLSQL): dumps .sql gerados chegaram a ser 94% do grafico.
+# Never counted, even though Linguist maps them to a programming language
+# (.sql is also TSQL/PLSQL): generated .sql dumps once made up 94% of the chart.
 IGNORED_EXTENSIONS = {".sql"}
 
-# extensao / nome de arquivo -> linguagens candidatas (a preferida primeiro).
-# load_linguist() completa com todas as linguagens do GitHub.
+# extension / filename -> candidate languages (preferred first).
+# load_linguist() fills in every language GitHub knows.
 EXT_CANDIDATES = {ext: [lang] for ext, lang in EXTENSIONS.items()}
 NAME_CANDIDATES = {name: [lang] for name, lang in FILENAMES.items()}
-# Extensoes/nomes que tambem pertencem a dados ou prosa (.md = Markdown e
-# "GCC Machine Description"): so contam se o GitHub detectou a linguagem no repo.
+# Extensions/names also claimed by data or prose (.md = Markdown and
+# "GCC Machine Description"): counted only if GitHub detected the language in the repo.
 UNCOUNTED_KEYS = set()
 
-# Pastas geradas/dependencias: nao sao codigo escrito por voce.
+# Generated/dependency folders: not code you wrote.
 IGNORED_DIRS = {
     "build", "dist", "node_modules", "venv", ".venv", "__pycache__",
     "site-packages", "vendor", "target", "obj", ".git", ".idea", ".vscode",
     "third_party",
 }
 
-# Em repos de outras pessoas, quantos commits do usuario sao lidos (o maximo por pagina).
+# In other people's repos, how many of the user's commits are read (the per-page maximum).
 MAX_COMMITS_PER_REPO = 100
 
 CONTRIBUTED_QUERY = """
@@ -149,7 +149,7 @@ query($login: String!) {
 
 
 def get_json(url, params=None):
-    """GET na API; None se a resposta nao for 200 (repo vazio, sem acesso...)."""
+    """GET from the API; None if the response is not 200 (empty repo, no access...)."""
     resp = requests.get(url, headers=HEADERS, params=params, timeout=60)
     return resp.json() if resp.status_code == 200 else None
 
@@ -169,7 +169,7 @@ def get_all_pages(url, params):
 
 
 def get_login():
-    """Usuario analisado: GH_USER ou o dono do token."""
+    """User being analyzed: GH_USER or the token owner."""
     if USERNAME:
         return USERNAME
     resp = requests.get(f"{API}/user", headers=HEADERS, timeout=30)
@@ -178,13 +178,13 @@ def get_login():
 
 
 def get_repos():
-    """Todos os repositórios do usuário/organização (owner, público+privado, forks e arquivados)."""
+    """All repositories of the user/organization (owner, public+private, forks and archived)."""
     base_url = f"{API}/user/repos" if not USERNAME else f"{API}/users/{USERNAME}/repos"
     return get_all_pages(base_url, {"type": "owner"})
 
 
 def get_contributed_repos(login, owned):
-    """Repos de outras pessoas/organizações em que o usuário tem acesso ou contribuiu."""
+    """Other people's/organizations' repos the user has access to or contributed to."""
     names = set()
     if not USERNAME:
         repos = get_all_pages(f"{API}/user/repos", {"affiliation": "collaborator,organization_member"})
@@ -197,7 +197,7 @@ def get_contributed_repos(login, owned):
     )
     user = ((resp.json().get("data") or {}).get("user") or {}) if resp.status_code == 200 else {}
     if not user:
-        print(f"  aviso: nao foi possivel listar contribuicoes (HTTP {resp.status_code})")
+        print(f"  warning: could not list contributions (HTTP {resp.status_code})")
     nodes = (user.get("repositoriesContributedTo") or {}).get("nodes", [])
     names.update(node["nameWithOwner"] for node in nodes)
     repos = (get_json(f"{API}/repos/{name}") for name in sorted(names - owned))
@@ -205,7 +205,7 @@ def get_contributed_repos(login, owned):
 
 
 def fork_files(repo):
-    """Arquivos que o fork mudou em relação ao repo original (as contribuições do usuário)."""
+    """Files the fork changed compared with the upstream repo (the user's contributions)."""
     parent = repo.get("parent") or (get_json(repo["url"]) or {}).get("parent")
     if not parent:
         return set()
@@ -217,7 +217,7 @@ def fork_files(repo):
 
 
 def authored_files(repo, login):
-    """Arquivos tocados pelos commits do usuário num repo de outra pessoa."""
+    """Files touched by the user's commits in someone else's repo."""
     commits = get_json(
         f"{API}/repos/{repo['full_name']}/commits",
         {"author": login, "per_page": MAX_COMMITS_PER_REPO},
@@ -230,7 +230,7 @@ def authored_files(repo, login):
 
 
 def load_linguist():
-    """Completa EXT_CANDIDATES, NAME_CANDIDATES e LANGUAGE_COLORS com o Linguist."""
+    """Fills EXT_CANDIDATES, NAME_CANDIDATES and LANGUAGE_COLORS from Linguist."""
     try:
         resp = requests.get(
             LINGUIST_URL,
@@ -240,7 +240,7 @@ def load_linguist():
         resp.raise_for_status()
         languages = yaml.safe_load(resp.text)
     except (requests.RequestException, yaml.YAMLError) as exc:
-        print(f"  aviso: languages.yml do Linguist indisponivel ({exc}); usando tabela interna")
+        print(f"  warning: Linguist languages.yml unavailable ({exc}); using built-in table")
         return
     for lang, info in languages.items():
         if info.get("color"):
@@ -257,11 +257,11 @@ def load_linguist():
                 candidates = table.setdefault(key, [])
                 if lang not in candidates:
                     candidates.append(lang)
-    print(f"  {len(languages)} linguagens carregadas do GitHub Linguist.")
+    print(f"  {len(languages)} languages loaded from GitHub Linguist.")
 
 
 def lookup_key(name):
-    """Chave do arquivo nas tabelas: o nome exato ou a extensao mais longa (.d.ts > .ts)."""
+    """Lookup key for a file: the exact name or the longest extension (.d.ts > .ts)."""
     if name in NAME_CANDIDATES or name in UNCOUNTED_KEYS:
         return name
     lower = name.lower()
@@ -273,10 +273,10 @@ def lookup_key(name):
 
 
 def language_for(path, repo_languages=()):
-    """Linguagem de um arquivo pelo caminho, ou None se deve ser ignorado.
+    """Language of a file by its path, or None if it should be ignored.
 
-    repo_languages sao as linguagens que o GitHub detectou no repositorio e
-    desempatam extensoes ambiguas (.gd -> GDScript em vez de GAP).
+    repo_languages are the languages GitHub detected in the repository; they
+    break ties for ambiguous extensions (.gd -> GDScript instead of GAP).
     """
     parts = path.split("/")
     if any(p.lower() in IGNORED_DIRS for p in parts[:-1]):
@@ -296,48 +296,48 @@ def language_for(path, repo_languages=()):
 
 
 def get_tree(repo):
-    """Arquivos (blobs) da branch padrao do repositorio."""
+    """Files (blobs) on the repository's default branch."""
     resp = requests.get(
         f"{API}/repos/{repo['full_name']}/git/trees/{repo['default_branch']}",
         headers=HEADERS,
         params={"recursive": "1"},
         timeout=60,
     )
-    if resp.status_code == 409:  # repositorio vazio
+    if resp.status_code == 409:  # empty repository
         return []
     if resp.status_code != 200:
-        # Sem o nome do repo: o log do Actions e publico e o repo pode ser privado.
-        print(f"  aviso: nao foi possivel ler um repositorio (HTTP {resp.status_code})")
+        # No repo name: the Actions log is public and the repo may be private.
+        print(f"  warning: could not read a repository (HTTP {resp.status_code})")
         return []
     data = resp.json()
     if data.get("truncated"):
-        print("  aviso: arvore truncada em um repositorio (repo muito grande)")
+        print("  warning: truncated tree in a repository (repo too large)")
     return [e for e in data.get("tree", []) if e["type"] == "blob"]
 
 
 def get_repo_languages(repo):
-    """Linguagens que o GitHub detectou no repo (usadas so para desempate)."""
+    """Languages GitHub detected in the repo (used only to break ties)."""
     resp = requests.get(repo["languages_url"], headers=HEADERS, timeout=30)
     return set(resp.json()) if resp.status_code == 200 else set()
 
 
 def aggregate_languages(repos, login):
-    """Soma bytes por linguagem.
+    """Sums bytes per language.
 
-    Repos próprios contam inteiros. Em forks e em repos de outras pessoas só
-    contam os arquivos que o usuário mudou, para não somar código alheio.
+    Owned repos count in full. In forks and in other people's repos only the
+    files the user changed count, so other people's code is never added.
     """
     totals = {}
-    counts = {"proprios": 0, "forks": 0, "terceiros": 0}
+    counts = {"own": 0, "forks": 0, "third_party": 0}
     for repo in repos:
         if repo["owner"]["login"].lower() != login.lower():
-            kind, only = "terceiros", authored_files(repo, login)
+            kind, only = "third_party", authored_files(repo, login)
         elif repo.get("fork"):
             kind, only = "forks", fork_files(repo)
         else:
-            kind, only = "proprios", None
+            kind, only = "own", None
         if only is not None and not only:
-            continue  # fork/repo alheio sem nenhuma mudança do usuário
+            continue  # fork/third-party repo with no changes from the user
         counts[kind] += 1
         repo_languages = get_repo_languages(repo)
         for entry in get_tree(repo):
@@ -347,14 +347,14 @@ def aggregate_languages(repos, login):
             if lang:
                 totals[lang] = totals.get(lang, 0) + entry.get("size", 0)
     print(
-        f"  {counts['proprios']} repositórios próprios, {counts['forks']} forks e "
-        f"{counts['terceiros']} repositórios de terceiros com contribuições suas."
+        f"  {counts['own']} owned repositories, {counts['forks']} forks and "
+        f"{counts['third_party']} third-party repositories with your contributions."
     )
     return totals
 
 
 def to_percentages(totals):
-    """Todas as linguagens, da maior para a menor (sem agrupar em "Other")."""
+    """Every language, largest first (no "Other" bucket)."""
     total_bytes = sum(totals.values()) or 1
     items = [(lang, bytes_ / total_bytes * 100) for lang, bytes_ in totals.items()]
     items.sort(key=lambda x: x[1], reverse=True)
@@ -362,7 +362,7 @@ def to_percentages(totals):
 
 
 def fmt_pct(pct):
-    """1 casa decimal; valores pequenos ganham casas ate aparecer (0.04%, 0.003%)."""
+    """1 decimal place; small values get more decimals until they show (0.04%, 0.003%)."""
     if round(pct, 1) >= 0.1:
         return f"{pct:.1f}%"
     for decimals in range(2, 7):
@@ -421,28 +421,28 @@ def build_svg(percentages, width=700, height=220, title="Languages"):
 
 
 def main():
-    print("Carregando tabela de linguagens...")
+    print("Loading language table...")
     load_linguist()
 
-    print("Buscando repositórios...")
+    print("Fetching repositories...")
     login = get_login()
     repos = get_repos()
-    print(f"{len(repos)} repositórios seus encontrados (públicos + privados).")
+    print(f"{len(repos)} owned repositories found (public + private).")
     contributed = get_contributed_repos(login, {repo["full_name"] for repo in repos})
-    print(f"{len(contributed)} repositórios de terceiros com acesso ou contribuição.")
+    print(f"{len(contributed)} third-party repositories with access or contributions.")
 
-    print("Somando bytes de código por linguagem...")
+    print("Summing code bytes per language...")
     totals = aggregate_languages(repos + contributed, login)
 
     percentages = to_percentages(totals)
-    print("\nResultado:")
+    print("\nResult:")
     for lang, pct in percentages:
         print(f"  {lang:<20} {fmt_pct(pct)}")
 
     svg = build_svg(percentages)
     with open("language-stats.svg", "w", encoding="utf-8") as f:
         f.write(svg)
-    print("\nArquivo language-stats.svg gerado com sucesso.")
+    print("\nlanguage-stats.svg generated.")
 
 
 if __name__ == "__main__":

@@ -10,7 +10,9 @@ embedded in `README.md` via `./language-stats.svg` and refreshed daily by a GitH
 
 - Owner / GitHub account: `brunosiqp`
 - Visibility: public repository (the SVG only exposes aggregate percentages, never repo names)
-- `README.md` is written in Portuguese; keep it that way unless asked otherwise.
+- Everything in the repository is in **English**: README, code comments, log messages and the
+  workflow's commit message (`chore: update language stats`).
+- License: MIT (`LICENSE`).
 
 ## Layout
 
