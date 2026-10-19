@@ -20,7 +20,7 @@ embedded in `README.md` via `./language-stats.svg` and refreshed daily by a GitH
 |---|---|
 | `language_stats.py` | The whole tool: fetch repos, sum bytes per language, render SVG |
 | `requirements.txt` | `requests` and `PyYAML` (to parse Linguist's `languages.yml`) |
-| `.github/workflows/update-language-stats.yml` | Cron twice a day (08:00 and 15:00 Brasília = 11:00/18:00 UTC) + `workflow_dispatch`; runs the script and commits the SVG |
+| `.github/workflows/update-language-stats.yml` | Cron once a day at 07:37 Brasília (10:37 UTC, off the hour so the card is ready around 08:00) + `workflow_dispatch`; runs the script and commits the SVG |
 | `language-stats.svg` | Generated output. **Never edit by hand**; the workflow overwrites it |
 
 ## Commands

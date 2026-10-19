@@ -2,7 +2,10 @@ name: Update language stats
 
 on:
   schedule:
-    - cron: "0 11,18 * * *"   # every day at 08:00 and 15:00 Brasília time (UTC-3)
+    # Every day at 07:37 Brasília time (10:37 UTC). GitHub queues scheduled runs, often
+    # by tens of minutes and worse at the top of the hour, so starting off the hour
+    # makes the card ready around 08:00.
+    - cron: "37 10 * * *"
   workflow_dispatch: {}       # allows manual runs from GitHub
 
 permissions:
