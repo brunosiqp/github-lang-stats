@@ -33,7 +33,7 @@ of your GitHub repositories, public and private, similar to the
    > see the repository the Action runs in, so a personal token is required.
 
 4. **Done.** The workflow in `.github/workflows/update-language-stats.yml`
-   runs every day at 08:00 and 15:00 Brasília time (11:00 and 18:00 UTC), and
+   runs every day at 07:37 Brasília time (10:37 UTC), so the card is ready around 08:00, and
    whenever you trigger it manually in Actions → Run workflow. GitHub may delay
    scheduled runs during busy periods. It generates/updates
    `language-stats.svg` and commits it automatically.
