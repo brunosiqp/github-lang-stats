@@ -324,25 +324,32 @@ def get_repo_languages(repo):
 
 def languages_in(entries, only=None, repo_languages=()):
     """Set of languages with at least one file among the tree entries."""
-    found = set()
+    return set(language_sizes(entries, only, repo_languages))
+
+
+def language_sizes(entries, only=None, repo_languages=()):
+    """Bytes of code per language among the tree entries."""
+    sizes = {}
     for entry in entries:
         if only is not None and entry["path"] not in only:
             continue
         lang = language_for(entry["path"], repo_languages)
         if lang:
-            found.add(lang)
-    return found
+            sizes[lang] = sizes.get(lang, 0) + entry.get("size", 0)
+    return sizes
 
 
 def aggregate_languages(repos, login):
-    """Counts, per language, how many repositories use it.
+    """Per language: how many repositories use it, and how many bytes of code it has.
 
-    Each repository adds 1 to every language it has at least one file in, no matter
-    how big the files are, so one huge project does not dominate the chart.
+    Returns (by_repos, by_size). In by_repos each repository adds 1 to every language
+    it has at least one file in, no matter how big the files are, so one huge project
+    does not dominate that chart; by_size sums the bytes of the files.
     Owned repos count in full. In forks and in other people's repos only the
     files the user changed count, so other people's code is never added.
     """
-    totals = {}
+    by_repos = {}
+    by_size = {}
     counts = {"own": 0, "forks": 0, "third_party": 0}
     for repo in repos:
         if repo["owner"]["login"].lower() != login.lower():
@@ -354,13 +361,15 @@ def aggregate_languages(repos, login):
         if only is not None and not only:
             continue  # fork/third-party repo with no changes from the user
         counts[kind] += 1
-        for lang in languages_in(get_tree(repo), only, get_repo_languages(repo)):
-            totals[lang] = totals.get(lang, 0) + 1
+        sizes = language_sizes(get_tree(repo), only, get_repo_languages(repo))
+        for lang, size in sizes.items():
+            by_repos[lang] = by_repos.get(lang, 0) + 1
+            by_size[lang] = by_size.get(lang, 0) + size
     print(
         f"  {counts['own']} owned repositories, {counts['forks']} forks and "
         f"{counts['third_party']} third-party repositories with your contributions."
     )
-    return totals
+    return by_repos, by_size
 
 
 def to_percentages(totals):
@@ -381,7 +390,8 @@ def fmt_pct(pct):
     return "<0.000001%"
 
 
-def build_svg(percentages, width=830, title="Most Used Languages"):
+def build_svg(percentages, width=830, title="Most Used Languages",
+              subtitle="by number of repositories"):
     pad = 28
     bar_y = 88
     bar_height = 12
@@ -424,7 +434,7 @@ def build_svg(percentages, width=830, title="Most Used Languages"):
   </style>
   <rect x="0.5" y="0.5" width="{width - 1}" height="{total_height - 1}" rx="12" fill="#0d1117" stroke="#30363d" />
   <text x="{pad}" y="44" class="title">{escape(title)}</text>
-  <text x="{pad}" y="66" class="subtitle">All repositories · public and private · by number of repositories</text>
+  <text x="{pad}" y="66" class="subtitle">All repositories · public and private · {escape(subtitle)}</text>
   <clipPath id="barClip">
     <rect x="{pad}" y="{bar_y}" width="{bar_width}" height="{bar_height}" rx="{bar_height / 2:.1f}" />
   </clipPath>
@@ -435,6 +445,13 @@ def build_svg(percentages, width=830, title="Most Used Languages"):
   {''.join(legend_items)}
 </svg>'''
     return svg
+
+
+# One card per way of measuring "most used".
+OUTPUTS = {
+    "repositories": "language-stats.svg",
+    "size": "language-stats-size.svg",
+}
 
 
 def main():
@@ -448,18 +465,21 @@ def main():
     contributed = get_contributed_repos(login, {repo["full_name"] for repo in repos})
     print(f"{len(contributed)} third-party repositories with access or contributions.")
 
-    print("Counting repositories per language...")
-    totals = aggregate_languages(repos + contributed, login)
+    print("Counting repositories and code size per language...")
+    by_repos, by_size = aggregate_languages(repos + contributed, login)
 
-    percentages = to_percentages(totals)
-    print("\nResult:")
-    for lang, pct in percentages:
-        print(f"  {lang:<20} {fmt_pct(pct)}")
-
-    svg = build_svg(percentages)
-    with open("language-stats.svg", "w", encoding="utf-8") as f:
-        f.write(svg)
-    print("\nlanguage-stats.svg generated.")
+    cards = {
+        "repositories": ("Most Used Languages", "by number of repositories", by_repos),
+        "size": ("Languages by Code Size", "by code size", by_size),
+    }
+    for key, (title, subtitle, totals) in cards.items():
+        percentages = to_percentages(totals)
+        print(f"\nResult ({subtitle}):")
+        for lang, pct in percentages:
+            print(f"  {lang:<20} {fmt_pct(pct)}")
+        with open(OUTPUTS[key], "w", encoding="utf-8") as f:
+            f.write(build_svg(percentages, title=title, subtitle=subtitle))
+        print(f"{OUTPUTS[key]} generated.")
 
 
 if __name__ == "__main__":

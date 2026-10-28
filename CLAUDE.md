@@ -4,7 +4,8 @@ Guidance for Claude Code when working in this repository.
 
 ## What this project is
 
-`github-lang-stats` generates `language-stats.svg`, a "Languages" card with the percentage of each
+`github-lang-stats` generates two "Languages" cards, `language-stats.svg` (by number of repositories)
+and `language-stats-size.svg` (by code size), with the percentage of each
 language across **all** repositories owned by the GitHub user (public and private). The SVG is
 embedded in `README.md` via `./language-stats.svg` and refreshed daily by a GitHub Actions workflow.
 
@@ -21,14 +22,14 @@ embedded in `README.md` via `./language-stats.svg` and refreshed daily by a GitH
 | `language_stats.py` | The whole tool: fetch repos, count repositories per language, render SVG |
 | `requirements.txt` | `requests` and `PyYAML` (to parse Linguist's `languages.yml`) |
 | `.github/workflows/update-language-stats.yml` | Cron once a day at 07:37 Brasília (10:37 UTC); GitHub often starts it hours later, but it runs daily + `workflow_dispatch`; runs the script and commits the SVG |
-| `language-stats.svg` | Generated output. **Never edit by hand**; the workflow overwrites it |
+| `language-stats.svg`, `language-stats-size.svg` | Generated output. **Never edit by hand**; the workflow overwrites them |
 
 ## Commands
 
 ```bash
 pip install -r requirements.txt
 export GH_TOKEN=...            # classic PAT with `repo` + `read:user`; never commit or paste it
-python language_stats.py       # writes language-stats.svg and prints the percentages
+python language_stats.py       # writes both SVGs and prints the percentages
 ```
 
 Trigger the workflow manually:
@@ -55,9 +56,11 @@ accidentally committed build output (PyInstaller `build/*.toc` showed up as 88% 
    - owned non-fork repos: every file;
    - forks: only files changed vs. upstream (`fork_files()`, compare API), never the upstream code;
    - third-party repos: only files touched by the user's last 100 commits (`authored_files()`).
-   Each repository adds **1** to every language it has at least one counted file in (`languages_in()`),
-   regardless of file size: the user asked for usage across projects, not code size, because one huge
-   Python project kept Python above 90%.
+   `aggregate_languages()` returns two totals from the same pass (`language_sizes()` per repository):
+   - `by_repos` → `language-stats.svg`: each repository adds **1** to every language it has at least one
+     counted file in, regardless of size (one huge Python project kept Python above 90% by size);
+   - `by_size` → `language-stats-size.svg`: bytes of code per language.
+   The user wants **both** cards shown on the profile.
 3. `get_tree()` reads the recursive git tree of the default branch; `language_for()` maps each file
    by exact filename or longest extension (`.d.ts` before `.ts`).
 4. Ambiguous extensions are resolved with the repo's `/languages` result (only a hint, never summed):
