@@ -5,8 +5,9 @@ Builds a summary of the % of languages used across ALL repositories
 the "Most Used Languages" card from github-readme-stats.
 
 How it works: for each repository (public or private) it reads the file
-tree, sums the size in bytes of every code file by extension and ignores
-generated folders (build/, dist/, node_modules/, venv/ ...). That way,
+tree, finds which languages have at least one code file (by extension) and
+counts 1 per repository for each of them, so one huge project does not dominate
+the chart. It ignores generated folders (build/, dist/, node_modules/, venv/ ...). That way,
 accidentally committed artifacts (e.g. a PyInstaller build) do not skew the
 result, as they do with GitHub's /languages API.
 
@@ -321,9 +322,23 @@ def get_repo_languages(repo):
     return set(resp.json()) if resp.status_code == 200 else set()
 
 
-def aggregate_languages(repos, login):
-    """Sums bytes per language.
+def languages_in(entries, only=None, repo_languages=()):
+    """Set of languages with at least one file among the tree entries."""
+    found = set()
+    for entry in entries:
+        if only is not None and entry["path"] not in only:
+            continue
+        lang = language_for(entry["path"], repo_languages)
+        if lang:
+            found.add(lang)
+    return found
 
+
+def aggregate_languages(repos, login):
+    """Counts, per language, how many repositories use it.
+
+    Each repository adds 1 to every language it has at least one file in, no matter
+    how big the files are, so one huge project does not dominate the chart.
     Owned repos count in full. In forks and in other people's repos only the
     files the user changed count, so other people's code is never added.
     """
@@ -339,13 +354,8 @@ def aggregate_languages(repos, login):
         if only is not None and not only:
             continue  # fork/third-party repo with no changes from the user
         counts[kind] += 1
-        repo_languages = get_repo_languages(repo)
-        for entry in get_tree(repo):
-            if only is not None and entry["path"] not in only:
-                continue
-            lang = language_for(entry["path"], repo_languages)
-            if lang:
-                totals[lang] = totals.get(lang, 0) + entry.get("size", 0)
+        for lang in languages_in(get_tree(repo), only, get_repo_languages(repo)):
+            totals[lang] = totals.get(lang, 0) + 1
     print(
         f"  {counts['own']} owned repositories, {counts['forks']} forks and "
         f"{counts['third_party']} third-party repositories with your contributions."
@@ -355,8 +365,8 @@ def aggregate_languages(repos, login):
 
 def to_percentages(totals):
     """Every language, largest first (no "Other" bucket)."""
-    total_bytes = sum(totals.values()) or 1
-    items = [(lang, bytes_ / total_bytes * 100) for lang, bytes_ in totals.items()]
+    total = sum(totals.values()) or 1
+    items = [(lang, count / total * 100) for lang, count in totals.items()]
     items.sort(key=lambda x: x[1], reverse=True)
     return items
 
@@ -414,7 +424,7 @@ def build_svg(percentages, width=830, title="Most Used Languages"):
   </style>
   <rect x="0.5" y="0.5" width="{width - 1}" height="{total_height - 1}" rx="12" fill="#0d1117" stroke="#30363d" />
   <text x="{pad}" y="44" class="title">{escape(title)}</text>
-  <text x="{pad}" y="66" class="subtitle">All repositories · public and private · by code size</text>
+  <text x="{pad}" y="66" class="subtitle">All repositories · public and private · by number of repositories</text>
   <clipPath id="barClip">
     <rect x="{pad}" y="{bar_y}" width="{bar_width}" height="{bar_height}" rx="{bar_height / 2:.1f}" />
   </clipPath>
@@ -438,7 +448,7 @@ def main():
     contributed = get_contributed_repos(login, {repo["full_name"] for repo in repos})
     print(f"{len(contributed)} third-party repositories with access or contributions.")
 
-    print("Summing code bytes per language...")
+    print("Counting repositories per language...")
     totals = aggregate_languages(repos + contributed, login)
 
     percentages = to_percentages(totals)

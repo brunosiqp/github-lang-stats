@@ -18,9 +18,9 @@ embedded in `README.md` via `./language-stats.svg` and refreshed daily by a GitH
 
 | Path | Purpose |
 |---|---|
-| `language_stats.py` | The whole tool: fetch repos, sum bytes per language, render SVG |
+| `language_stats.py` | The whole tool: fetch repos, count repositories per language, render SVG |
 | `requirements.txt` | `requests` and `PyYAML` (to parse Linguist's `languages.yml`) |
-| `.github/workflows/update-language-stats.yml` | Cron once a day at 07:37 Brasília (10:37 UTC, off the hour so the card is ready around 08:00) + `workflow_dispatch`; runs the script and commits the SVG |
+| `.github/workflows/update-language-stats.yml` | Cron once a day at 07:37 Brasília (10:37 UTC); GitHub often starts it hours later, but it runs daily + `workflow_dispatch`; runs the script and commits the SVG |
 | `language-stats.svg` | Generated output. **Never edit by hand**; the workflow overwrites it |
 
 ## Commands
@@ -55,7 +55,9 @@ accidentally committed build output (PyInstaller `build/*.toc` showed up as 88% 
    - owned non-fork repos: every file;
    - forks: only files changed vs. upstream (`fork_files()`, compare API), never the upstream code;
    - third-party repos: only files touched by the user's last 100 commits (`authored_files()`).
-   Files are counted at full size once touched (not per changed line).
+   Each repository adds **1** to every language it has at least one counted file in (`languages_in()`),
+   regardless of file size: the user asked for usage across projects, not code size, because one huge
+   Python project kept Python above 90%.
 3. `get_tree()` reads the recursive git tree of the default branch; `language_for()` maps each file
    by exact filename or longest extension (`.d.ts` before `.ts`).
 4. Ambiguous extensions are resolved with the repo's `/languages` result (only a hint, never summed):
