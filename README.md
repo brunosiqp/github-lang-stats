@@ -33,9 +33,10 @@ of your GitHub repositories, public and private, similar to the
    > see the repository the Action runs in, so a personal token is required.
 
 4. **Done.** The workflow in `.github/workflows/update-language-stats.yml`
-   runs every day at 07:37 Brasília time (10:37 UTC), so the card is ready around 08:00, and
-   whenever you trigger it manually in Actions → Run workflow. GitHub may delay
-   scheduled runs during busy periods. It generates/updates
+   runs once a day (scheduled for 07:37 Brasília time, 10:37 UTC) and whenever
+   you trigger it manually in Actions → Run workflow. GitHub does not guarantee
+   the time of scheduled runs: they often start a few hours later, but they run
+   every day. It generates/updates
    `language-stats.svg` and commits it automatically.
 
 5. **Show the SVG** wherever you like, for example in your profile README:
@@ -58,9 +59,12 @@ each language in the terminal.
 ## How the calculation works
 
 For each of your repositories (public **and private**, including archived
-ones), the script reads the file tree of the default branch and sums the size
-in bytes of the code files, classified by extension. New repositories are
-picked up automatically on the next run.
+ones), the script reads the file tree of the default branch and finds which
+languages have at least one code file (classified by extension). Each language
+counts **1 per repository** that uses it, whatever the size of the files, so the
+percentage shows in how many projects you use each language and one huge project
+does not dominate the chart. New repositories are picked up automatically on the
+next run.
 
 Contributions count too, but only your part:
 
