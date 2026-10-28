@@ -31,6 +31,10 @@ class LanguagesInTests(unittest.TestCase):
         entries = [{"path": "a.py"}, {"path": "c.ps1"}]
         self.assertEqual(language_stats.languages_in(entries, only={"c.ps1"}), {"PowerShell"})
 
+    def test_language_sizes_sums_bytes_per_language(self):
+        entries = [{"path": "a.py", "size": 10}, {"path": "b.py", "size": 5}, {"path": "c.ps1", "size": 2}]
+        self.assertEqual(language_stats.language_sizes(entries), {"Python": 15, "PowerShell": 2})
+
     def test_languages_in_ignores_build_output(self):
         self.assertEqual(language_stats.languages_in([{"path": "build/x.py"}]), set())
 
@@ -42,13 +46,17 @@ class AggregateTests(unittest.TestCase):
               mock.patch("builtins.print")):
             return language_stats.aggregate_languages(repos, "brunosiqp")
 
-    def test_counts_repositories_not_bytes(self):
-        totals = self.run_aggregate([repo("big"), repo("small-ps"), repo("site")])
-        self.assertEqual(totals, {"Python": 2, "PowerShell": 2, "HTML": 1})
+    def test_counts_repositories(self):
+        by_repos, _ = self.run_aggregate([repo("big"), repo("small-ps"), repo("site")])
+        self.assertEqual(by_repos, {"Python": 2, "PowerShell": 2, "HTML": 1})
+
+    def test_also_sums_code_size(self):
+        _, by_size = self.run_aggregate([repo("big"), repo("small-ps"), repo("site")])
+        self.assertEqual(by_size, {"Python": 5_000_100, "PowerShell": 1100, "HTML": 3000})
 
     def test_percentages_follow_repository_counts(self):
-        totals = self.run_aggregate([repo("big"), repo("small-ps"), repo("site")])
-        pct = dict(language_stats.to_percentages(totals))
+        by_repos, _ = self.run_aggregate([repo("big"), repo("small-ps"), repo("site")])
+        pct = dict(language_stats.to_percentages(by_repos))
         self.assertAlmostEqual(pct["Python"], 40.0)
         self.assertAlmostEqual(pct["HTML"], 20.0)
 

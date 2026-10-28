@@ -25,6 +25,16 @@ class LanguageCardTests(unittest.TestCase):
     def test_card_escapes_language_names(self):
         self.assertIn("C&lt;Weird&gt;", language_stats.build_svg(SAMPLE))
 
+    def test_card_subtitle_can_change(self):
+        svg = language_stats.build_svg(SAMPLE, subtitle="by code size")
+        self.assertIn("by code size", svg)
+
+    def test_main_writes_both_cards(self):
+        self.assertEqual(language_stats.OUTPUTS, {
+            "repositories": "language-stats.svg",
+            "size": "language-stats-size.svg",
+        })
+
     def test_card_has_title_and_subtitle(self):
         svg = language_stats.build_svg(SAMPLE)
         self.assertIn("Most Used Languages", svg)

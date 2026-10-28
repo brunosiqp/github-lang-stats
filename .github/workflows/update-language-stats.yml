@@ -40,7 +40,7 @@ jobs:
         run: |
           git config --local user.email "168676931+brunosiqp@users.noreply.github.com"
           git config --local user.name "brunosiqp"
-          git add language-stats.svg
+          git add language-stats.svg language-stats-size.svg
           git diff --quiet --cached || git commit -m "chore: update language stats"
           git pull --rebase
           git push
